@@ -1,5 +1,6 @@
-import org.apache.spark
-import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+package esgi
+
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 class DataImporter {
 
