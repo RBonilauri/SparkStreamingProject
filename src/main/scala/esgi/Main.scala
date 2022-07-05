@@ -1,16 +1,17 @@
 package esgi
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.sql.functions.{col, sum, to_date, window}
 import org.apache.spark.sql.streaming.StreamingQuery
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.io.File
+import java.nio.file.{Files, StandardCopyOption}
 
 object Main {
   Logger.getLogger("org").setLevel(Level.WARN)
   Logger.getLogger("akka").setLevel(Level.WARN)
+  val dataDir: String = String.format( "%s/%s/",System.getProperty("user.dir") , "data")
 
   def getListOfFiles(dir: String): List[String] = {
     val d = new File(dir)
@@ -33,15 +34,15 @@ object Main {
     spark
   }
 
-  def getDefaultSchema(sparkSession: SparkSession, directory : String): StructType = {
+  def getDefaultSchema(sparkSession: SparkSession): StructType = {
 
     val data_importer = new DataImporter()
-    val df: DataFrame = data_importer.readCSV(sparkSession, getListOfFiles(directory).head)
+    val df: DataFrame = data_importer.readCSV(sparkSession, getListOfFiles(dataDir).head)
 
     df.schema
   }
 
-  def controlStop(spark: SparkSession, dataDir: String): StreamingQuery = {
+  def controlStop(spark: SparkSession): StreamingQuery = {
     val stopSchema = "process string, kill string"
     val stopStream = spark.readStream
       .schema(stopSchema)
@@ -58,12 +59,19 @@ object Main {
       .start()
   }
 
+  def resetDir(): Unit = {
+
+    val d1 = new File(dataDir + "stop_stream/stop_stream.csv").toPath
+    val d2 = new File(dataDir + "tmp/stop_stream.csv").toPath
+
+    Files.move(d1, d2, StandardCopyOption.ATOMIC_MOVE)
+  }
+
   def main(args: Array[String]): Unit = {
 
     val spark = initSparkSession()
 
-    val dataDir = String.format( "%s/%s/",System.getProperty("user.dir") , "data")
-    val streamSchema = getDefaultSchema(spark, dataDir)
+    val streamSchema = getDefaultSchema(spark)
 
     val siteUseStream = spark.readStream
       .schema(streamSchema)
@@ -72,17 +80,14 @@ object Main {
       .option("header", "true")
       .load(dataDir + "*.csv")
 
-    val stopStream = controlStop(spark, dataDir)
+    val stopStream = controlStop(spark)
 
 
     println("retail is streaming: " + siteUseStream.isStreaming)
     println("supervisor is streaming : " + stopStream.isActive)
 
 
-    val transformations = Transformations(siteUseStream)
-
-    transformations.totalActionsOnSite()
-    transformations.average_by_window()
+    Transformations(siteUseStream).launchStreams()
 
     var stopStatus = true
     while( stopStatus ) {
@@ -91,24 +96,28 @@ object Main {
           |select max(date) as MAX_date, sum(nb_actions) as TOTAL_actions  from totalActionsOnSite
           |""".stripMargin)
       println("total action on site up to date : " )
-      totalActions.show(totalActions.count().toInt ,truncate = false)
+      totalActions.show(truncate = false)
 
       val dfSelect = spark.sql(
         """
           |select * from avg_time
-          |order by window
+          |order by window desc
           |""".stripMargin)
 
-      dfSelect.show(numRows = 5, truncate = false)
+      dfSelect.show(numRows = 10, truncate = false)
 
       val df = spark.sql(
         "select * from stop_process".stripMargin)
       stopStatus = df
         .count() == 0
-      println()
       df.show()
+
+      val dfBusy = spark.sql("select * from big_busiest_day")
+      dfBusy.show()
       Thread.sleep(5000)
     }
     spark.stop()
+
+    resetDir()
   }
 }
