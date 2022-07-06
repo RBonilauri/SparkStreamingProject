@@ -91,12 +91,21 @@ object Main {
 
     var stopStatus = true
     while( stopStatus ) {
+
       val totalActions = spark.sql(
+        """
+          |select * from totalActionsOnSite
+          |""".stripMargin)
+      println("Content of totalActionsOnSite : " )
+      totalActions.show(5, truncate = false)
+
+
+      val maxTotalActions = spark.sql(
         """
           |select max(date) as MAX_date, sum(nb_actions) as TOTAL_actions  from totalActionsOnSite
           |""".stripMargin)
       println("total action on site up to date : " )
-      totalActions.show(truncate = false)
+      maxTotalActions.show(5, truncate = false)
 
       val dfSelect = spark.sql(
         """
@@ -104,16 +113,21 @@ object Main {
           |order by window desc
           |""".stripMargin)
 
-      dfSelect.show(numRows = 10, truncate = false)
+      dfSelect.show(numRows = 5, truncate = false)
+
+      val dfBusy = spark.sql("select * from big_busiest_day")
+      dfBusy.show(5,truncate=false)
+
 
       val df = spark.sql(
         "select * from stop_process".stripMargin)
       stopStatus = df
         .count() == 0
-      df.show()
+      println("Streams to stop : ")
+      df.show(5)
 
-      val dfBusy = spark.sql("select * from big_busiest_day")
-      dfBusy.show()
+      println("==================================================")
+      println("==================================================")
       Thread.sleep(5000)
     }
     spark.stop()

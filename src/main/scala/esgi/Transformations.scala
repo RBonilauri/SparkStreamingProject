@@ -1,7 +1,7 @@
 package esgi
 
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.{col, max, to_date, window}
+import org.apache.spark.sql.functions.{col, desc, max, to_date, window}
 import org.apache.spark.sql.streaming.StreamingQuery
 
 case class Transformations(stream: DataFrame){
@@ -48,6 +48,7 @@ case class Transformations(stream: DataFrame){
         .as("window")
       )
       .max("nb_downloads")
+      .orderBy(desc("max(nb_downloads)"))
       .writeStream
       .format("memory")
       .queryName("big_busiest_day")
